@@ -1,17 +1,19 @@
 // A token-radar-01 entry (Node 22, standard library only).
 //
 // The program reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores
-// every rankable pre-token protocol with the radar-4 model in lib/model.ts, writes the ranked board
+// every rankable pre-token protocol with the radar-5 model in lib/model.ts, writes the ranked board
 // to /output/board.json, and copies this repository's dashboard/ and screenshots/ to /output. Last,
 // it writes /output/dossier.json, the summary the judge reads, with the vendored make.fun library.
 //
-// radar-4 fits a size curve to the snapshot's own live-token prices — log(mcap) = a + b*log(tvl)
+// radar-5 fits a size curve to the snapshot's own live-token prices — log(mcap) = a + b*log(tvl)
 // with a shrunk offset per category — then tests it before trusting it: leave-one-out and a
-// walk-forward split, the same tests on naive median-multiple baselines, and the growth/age
-// signal tests. Value bands come from 200 seeded bootstrap refits. Farm plans are costed and
-// netted to a FARM / THIN / SKIP verdict. The dashboard is a static page, no framework and no
-// network: dashboard/index.html, dashboard/app.css and dashboard/app.js read /output/data.js,
-// which this program writes from the same board — one model for the page and the board.
+// walk-forward split, the same tests on naive median-multiple baselines, the growth/age
+// signal tests, and an ablation table that shows what was tried and what survived. Value bands
+// come from 200 seeded bootstrap refits. Farm plans are costed and netted to a FARM / THIN /
+// SKIP verdict, with the airdrop slice, net, break-even and net per hour at a $1,000 ticket.
+// The dashboard is a static page, no framework and no network: dashboard/index.html,
+// dashboard/app.css and dashboard/app.js read /output/data.js, which this program writes from
+// the same board — one model for the page and the board.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
@@ -89,10 +91,15 @@ for (const name of shots) {
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
 const v = radar.validation;
+const ledgerSum = radar.ledger.groups.reduce((s, g) => s + g.count, 0);
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
-    `token radar: size curve log(mcap) = ${radar.curve.intercept.toFixed(3)} + ${radar.curve.slope.toFixed(3)}*log(tvl), R2 ${radar.curve.r_squared}, ${radar.curve.live_count} live protocols\n` +
-    `token radar: validation LOO log-RMSE ${v.leave_one_out.log_rmse} (${v.leave_one_out.within_2x_pct}% within 2x), walk-forward ${v.walk_forward.log_rmse} on ${v.walk_forward.test_n} held-out protocols\n` +
+    `token radar: ledger sums to ${ledgerSum} of ${radar.ledger.total} (${radar.ledger.groups.map((g) => `${g.key} ${g.count}`).join(', ')})\n` +
+    `token radar: size curve log(mcap) = ${radar.curve.intercept.toFixed(3)} + ${radar.curve.slope.toFixed(3)}*log(tvl), R2 ${radar.curve.r_squared} (full ${radar.curve.r_squared_full}), ${radar.curve.live_count} live protocols\n` +
+    `token radar: validation LOO log-RMSE ${v.leave_one_out.log_rmse} (med x${v.leave_one_out.med_mult}, ${v.leave_one_out.within_2x_pct}% within 2x), walk-forward ${v.walk_forward.log_rmse} (med x${v.walk_forward.med_mult}) on ${v.walk_forward.test_n} held-out protocols\n` +
+    `token radar: range holds LOO P25-P75 ${v.range_hold_p50_pct}% (50% by construction), P10-P90 ${v.range_hold_p90_pct}% (80% by construction); flat baseline LOO med x${v.baselines.flat_med_mult_loo}, WF med x${v.baselines.flat_med_mult_wf}\n` +
+    `token radar: ablation ${radar.ablation.map((a) => `${a.name.split(' ')[0]} LOO x${a.loo_med} WF x${a.wf_med}${a.kept ? ' KEPT' : ''}`).join(' | ')}\n` +
+    `token radar: farm economics at $${radar.ticket_usd} ticket, ${Math.round(radar.drop_share * 100)}% drop share: ${radar.farm_count} FARM of ${board.length}, best net/hour $${radar.best_net_per_hour_usd} (${radar.best_net_per_hour_name})\n` +
     `token radar: total implied value $${radar.total_implied_usd.toLocaleString('en-US')}\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );
